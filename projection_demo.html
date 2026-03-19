@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Projection Destroys Correlation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #07070f;
+    --surface: #0e0e1c;
+    --border: #1e1e36;
+    --text: #e8e8f0;
+    --muted: #5a5a7a;
+    --accent-x: #4d7cff;
+    --accent-y: #ff4d6d;
+    --accent-gold: #ffc14d;
+    --corr-pos: #4dffb4;
+    --corr-neg: #ff4d6d;
+    --font-mono: 'DM Mono', monospace;
+    --font-sans: 'DM Sans', sans-serif;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-weight: 300;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* subtle grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 48px 48px;
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 24px 72px;
+  }
+
+  /* ── Header ── */
+  header {
+    margin-bottom: 48px;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  h1 {
+    font-size: clamp(22px, 4vw, 36px);
+    font-weight: 400;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    margin-bottom: 16px;
+  }
+
+  h1 em {
+    font-style: normal;
+    color: var(--accent-gold);
+  }
+
+  .subtitle {
+    font-size: 14px;
+    color: var(--muted);
+    max-width: 620px;
+    line-height: 1.7;
+  }
+
+  /* ── Main grid ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    grid-template-rows: auto auto;
+    gap: 20px;
+  }
+
+  @media (max-width: 780px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 24px;
+  }
+
+  .card-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  /* ── Canvas ── */
+  #canvas-wrap {
+    position: relative;
+    grid-row: 1 / 3;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    border-radius: 2px;
+  }
+
+  /* ── Correlation display ── */
+  .corr-display {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .corr-value {
+    font-family: var(--font-mono);
+    font-size: 52px;
+    font-weight: 300;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    transition: color 0.2s;
+  }
+
+  .corr-sublabel {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .bar-track {
+    height: 6px;
+    background: var(--border);
+    border-radius: 99px;
+    position: relative;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .bar-fill {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    border-radius: 99px;
+    transition: width 0.05s, left 0.05s, background 0.2s;
+  }
+
+  .bar-zero {
+    position: absolute;
+    top: -2px;
+    width: 1px;
+    height: 10px;
+    background: var(--muted);
+    left: 50%;
+  }
+
+  /* ── Sliders ── */
+  .sliders { display: flex; flex-direction: column; gap: 22px; }
+
+  .slider-row { display: flex; flex-direction: column; gap: 8px; }
+
+  .slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .slider-name {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+
+  .slider-val {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 99px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type=range].x-slider {
+    background: linear-gradient(90deg, var(--accent-x), #1a3a99);
+  }
+
+  input[type=range].y-slider {
+    background: linear-gradient(90deg, var(--accent-y), #991a2a);
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--text);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 0 1px var(--muted);
+    cursor: grab;
+  }
+
+  input[type=range]:active::-webkit-slider-thumb { cursor: grabbing; }
+
+  /* ── Cosine row ── */
+  .cosine-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+  }
+
+  .cosine-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .cosine-val {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--accent-gold);
+    white-space: nowrap;
+  }
+
+  /* ── Insight box ── */
+  .insight {
+    grid-column: 1 / -1;
+    border-left: 2px solid var(--accent-gold);
+    padding: 16px 20px;
+    background: rgba(255,193,77,0.04);
+  }
+
+  .insight p {
+    font-size: 13px;
+    line-height: 1.75;
+    color: #b0b0cc;
+  }
+
+  .insight strong { color: var(--accent-gold); font-weight: 500; }
+
+  /* ── Legend dots ── */
+  .legend {
+    display: flex;
+    gap: 20px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Interactive demonstration</p>
+    <h1>Projection destroys correlation —<br>a <em>geometric</em> source of replication failures</h1>
+    <p class="subtitle">
+      X and Y share a true latent relationship. But we never observe them directly —
+      only through projections. Move the sliders to rotate each projection direction
+      and watch the observed correlation change, even though the underlying truth does not.
+    </p>
+  </header>
+
+  <div class="grid">
+
+    <!-- Canvas -->
+    <div class="card" id="canvas-wrap">
+      <p class="card-label">Projected observations · N = 400 · D = 50</p>
+      <canvas id="c"></canvas>
+      <div class="legend" style="margin-top:14px;">
+        <div class="legend-item"><div class="dot" style="background:#4d7cff"></div>low latent value</div>
+        <div class="legend-item"><div class="dot" style="background:#c0c0e0"></div>mid latent value</div>
+        <div class="legend-item"><div class="dot" style="background:#ff4d6d"></div>high latent value</div>
+      </div>
+    </div>
+
+    <!-- Right panel -->
+    <div style="display:flex;flex-direction:column;gap:20px;">
+
+      <!-- Correlation readout -->
+      <div class="card">
+        <p class="card-label">Observed correlation r</p>
+        <div class="corr-display">
+          <div class="corr-value" id="corr-val">0.00</div>
+          <div class="corr-sublabel">between projected X and projected Y</div>
+          <div class="bar-track">
+            <div class="bar-zero"></div>
+            <div class="bar-fill" id="corr-bar"></div>
+          </div>
+          <div class="cosine-row">
+            <span class="cosine-label">cos(pₓ, p_y) =</span>
+            <span class="cosine-val" id="cos-val">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sliders -->
+      <div class="card">
+        <p class="card-label">Projection directions</p>
+        <div class="sliders">
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-name" style="color:var(--accent-x)">X projection angle</span>
+              <span class="slider-val" id="ax-val">0.00</span>
+            </div>
+            <input type="range" class="x-slider" id="ax" min="0" max="628" value="0" step="1">
+          </div>
+          <div class="slider-row">
+            <div class="slider-header">
+              <span class="slider-name" style="color:var(--accent-y)">Y projection angle</span>
+              <span class="slider-val" id="ay-val">0.00</span>
+            </div>
+            <input type="range" class="y-slider" id="ay" min="0" max="628" value="0" step="1">
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Insight -->
+    <div class="insight">
+      <p>
+        <strong>The key observation:</strong>
+        the observed correlation is geometrically the cosine between two projection vectors —
+        not a measure of the underlying relationship.
+        When the two variables are projected through <em>different, unknown</em> measurement processes,
+        this cosine can be positive, negative, or zero <strong>regardless of the true relationship</strong>.
+        Replication failures across psychology, economics, and biomedicine may reflect
+        this structural geometric fact — not failures of experimental rigor alone.
+      </p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Seeded RNG (mulberry32) ──────────────────────────────────────────────────
+function mulberry32(seed) {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+const rng = mulberry32(42);
+function randn() {
+  const u = 1 - rng(), v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// ── Data generation ──────────────────────────────────────────────────────────
+const N = 400, D = 50;
+
+// latent variable
+const latent = Array.from({length: N}, () => randn());
+
+// X_true[n][d], Y_true[n][d]
+const dirX = Array.from({length: D}, () => randn());
+const dirY = Array.from({length: D}, () => randn());
+
+const X_true = Array.from({length: N}, (_, i) =>
+  Array.from({length: D}, (_, d) => latent[i] * dirX[d] + 0.3 * randn())
+);
+const Y_true = Array.from({length: N}, (_, i) =>
+  Array.from({length: D}, (_, d) => latent[i] * dirY[d] + 0.3 * randn())
+);
+
+// Base projection directions
+const rng2 = mulberry32(0);
+function randn2() {
+  const u = 1 - rng2(), v = rng2();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+function normalize(v) {
+  const n = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
+  return v.map(x => x / n);
+}
+
+function gramSchmidt(v, u) {
+  const dot = v.reduce((s, x, i) => s + x * u[i], 0);
+  return normalize(v.map((x, i) => x - dot * u[i]));
+}
+
+const px_base = normalize(Array.from({length: D}, () => randn2()));
+const px_orth = gramSchmidt(Array.from({length: D}, () => randn2()), px_base);
+const py_base = normalize(Array.from({length: D}, () => randn2()));
+const py_orth = gramSchmidt(Array.from({length: D}, () => randn2()), py_base);
+
+function project(ax, ay) {
+  // projection directions
+  const px = normalize(px_base.map((v, i) => Math.cos(ax) * v + Math.sin(ax) * px_orth[i]));
+  const py = normalize(py_base.map((v, i) => Math.cos(ay) * v + Math.sin(ay) * py_orth[i]));
+
+  const xp = X_true.map(row => row.reduce((s, v, i) => s + v * px[i], 0));
+  const yp = Y_true.map(row => row.reduce((s, v, i) => s + v * py[i], 0));
+
+  const mx = xp.reduce((s, v) => s + v, 0) / N;
+  const my = yp.reduce((s, v) => s + v, 0) / N;
+  const sx = Math.sqrt(xp.reduce((s, v) => s + (v - mx) ** 2, 0) / N);
+  const sy = Math.sqrt(yp.reduce((s, v) => s + (v - my) ** 2, 0) / N);
+  const corr = xp.reduce((s, v, i) => s + (v - mx) * (yp[i] - my), 0) / (N * sx * sy);
+
+  const cosine = px.reduce((s, v, i) => s + v * py[i], 0);
+
+  return { xp, yp, corr, cosine };
+}
+
+// ── Canvas drawing ───────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function latentColor(v) {
+  // blue → white → red
+  const t = (v - (-3)) / 6; // roughly -3..3
+  const clamped = Math.max(0, Math.min(1, t));
+  if (clamped < 0.5) {
+    const f = clamped * 2;
+    return [
+      Math.round(77 + (192 - 77) * f),
+      Math.round(124 + (192 - 124) * f),
+      Math.round(255 + (224 - 255) * f)
+    ];
+  } else {
+    const f = (clamped - 0.5) * 2;
+    return [
+      Math.round(192 + (255 - 192) * f),
+      Math.round(192 + (77 - 192) * f),
+      Math.round(224 + (109 - 224) * f)
+    ];
+  }
+}
+
+function draw(xp, yp) {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const pad = 32;
+  const minX = Math.min(...xp), maxX = Math.max(...xp);
+  const minY = Math.min(...yp), maxY = Math.max(...yp);
+  const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1;
+
+  function toCanvas(x, y) {
+    return [
+      pad + (x - minX) / rangeX * (W - 2 * pad),
+      H - pad - (y - minY) / rangeY * (H - 2 * pad)
+    ];
+  }
+
+  // axes
+  const [ox, oy] = toCanvas(0, 0);
+  ctx.strokeStyle = '#1e1e36';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (ox > pad && ox < W - pad) { ctx.moveTo(ox, pad); ctx.lineTo(ox, H - pad); }
+  if (oy > pad && oy < H - pad) { ctx.moveTo(pad, oy); ctx.lineTo(W - pad, oy); }
+  ctx.stroke();
+
+  // points
+  for (let i = 0; i < N; i++) {
+    const [cx, cy] = toCanvas(xp[i], yp[i]);
+    const [r, g, b] = latentColor(latent[i]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${r},${g},${b},0.75)`;
+    ctx.fill();
+  }
+}
+
+function resizeCanvas() {
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const size = rect.width - 48; // account for card padding
+  canvas.width = size;
+  canvas.height = size * 0.78;
+}
+
+// ── UI update ────────────────────────────────────────────────────────────────
+const corrValEl  = document.getElementById('corr-val');
+const corrBarEl  = document.getElementById('corr-bar');
+const cosValEl   = document.getElementById('cos-val');
+const axValEl    = document.getElementById('ax-val');
+const ayValEl    = document.getElementById('ay-val');
+const axSlider   = document.getElementById('ax');
+const aySlider   = document.getElementById('ay');
+
+function update() {
+  const ax = axSlider.value / 100;
+  const ay = aySlider.value / 100;
+  axValEl.textContent = ax.toFixed(2);
+  ayValEl.textContent = ay.toFixed(2);
+
+  const { xp, yp, corr, cosine } = project(ax, ay);
+
+  // corr value
+  const r = corr;
+  const isPos = r >= 0;
+  const col = isPos ? 'var(--corr-pos)' : 'var(--corr-neg)';
+  corrValEl.textContent = (r >= 0 ? '+' : '') + r.toFixed(3);
+  corrValEl.style.color = col;
+
+  // bar: centre at 50%
+  const pct = Math.abs(r) * 50;
+  if (isPos) {
+    corrBarEl.style.left = '50%';
+    corrBarEl.style.width = pct + '%';
+  } else {
+    corrBarEl.style.left = (50 - pct) + '%';
+    corrBarEl.style.width = pct + '%';
+  }
+  corrBarEl.style.background = col;
+
+  // cosine
+  cosValEl.textContent = (cosine >= 0 ? '+' : '') + cosine.toFixed(3);
+
+  draw(xp, yp);
+}
+
+axSlider.addEventListener('input', update);
+aySlider.addEventListener('input', update);
+
+window.addEventListener('resize', () => { resizeCanvas(); update(); });
+
+resizeCanvas();
+update();
+</script>
+</body>
+</html>
